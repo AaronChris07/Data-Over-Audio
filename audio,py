@@ -1,0 +1,68 @@
+import numpy as np
+import wave
+from tqdm import tqdm
+import time
+
+def text_to_binary(text):
+    return ''.join(format(ord(char), '08b') for char in text)
+
+def create_frequency_lookup():
+    return {
+        '0000': 1000, '0001': 1100, '0010': 1200, '0011': 1300,
+        '0100': 1400, '0101': 1500, '0110': 1600, '0111': 1700,
+        '1000': 1800, '1001': 1900, '1010': 2000, '1011': 2100,
+        '1100': 2200, '1101': 2300, '1110': 2400, '1111': 2500,
+    }
+
+def encode_binary_to_audio(binary_data, sample_rate=44100, duration=0.1, chunk_size=1024):
+    frequencies = create_frequency_lookup()
+
+    bits = (binary_data[i:i+4] for i in range(0, len(binary_data), 4))
+    frequencies_array = np.array([frequencies.get(bit, 0) for bit in bits])
+
+    total_samples = len(frequencies_array)
+    num_chunks = -(-total_samples // chunk_size)  # Equivalent to math.ceil(total_samples / chunk_size)
+
+    samples = np.empty(0, dtype=np.int16)
+
+    start_time = time.time()
+    last_update_time = start_time
+    progress_bar = tqdm(total=num_chunks, desc="Progress", unit="chunk")
+
+    for i in range(num_chunks):
+        start_idx = i * chunk_size
+        end_idx = min((i + 1) * chunk_size, total_samples)
+        chunk = frequencies_array[start_idx:end_idx, None]
+        t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+        chunk_waveform = np.sin(2 * np.pi * chunk * t)
+        samples = np.concatenate((samples, (chunk_waveform * 32767).astype(np.int16).flatten()))
+
+        progress_bar.update(1)
+
+        # Update progress every minute
+        current_time = time.time()
+        elapsed_time = current_time - start_time
+        if elapsed_time - last_update_time >= 60:
+            progress_bar.set_postfix({"Elapsed Time": f"{elapsed_time // 60:.0f}m {elapsed_time % 60:.0f}s"})
+            last_update_time = elapsed_time
+
+    progress_bar.close()
+    return samples
+
+def save_audio(samples, output_file='output.wav', sample_rate=44100):
+    with wave.open(output_file, 'w') as wave_file:
+        wave_file.setnchannels(1)
+        wave_file.setsampwidth(2)
+        wave_file.setframerate(sample_rate)
+        wave_file.writeframes(samples.tobytes())
+
+if __name__ == "__main__":
+    input_file = "1234.txt"
+    output_file = "output.wav"
+
+    with open(input_file, "r") as file:
+        text_data = file.read()
+
+    binary_data = text_to_binary(text_data)
+    samples = encode_binary_to_audio(binary_data)
+    save_audio(samples, output_file)
